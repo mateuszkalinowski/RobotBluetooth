@@ -20,9 +20,17 @@ LiquidCrystal_I2C lcd(0x27, 2, 1, 0, 4, 5, 6, 7, 3, POSITIVE);  // Ustawienie ad
 char command[20];
 int pointer = 0;
 
+boolean driving = false;
+
+unsigned long lastZero = 0;
+boolean recordedZero = false;
+
 void setup() {
   // put your setup code here, to run once:
   Serial.begin(9600);
+  pinMode(4,INPUT);
+
+ 
   while (!Serial) {
     ; // wait for serial port to connect. Needed for Native USB only
   }
@@ -35,13 +43,60 @@ void setup() {
 }
 
 void loop() {
+  boolean val = digitalRead(4);
+  Serial.println(val);
+   if(val == 0 && driving) {
+      if(recordedZero==false) {
+        lastZero = millis();
+        recordedZero = true;
+      }
+      else {
+        unsigned long now = millis();
+        if(now - lastZero > 1000) {
+          stop();
+          driving = false;
+          recordedZero = false;
+        }
+      }
+   }
   if(mySerial.available()) {
     char c = mySerial.read();
     if(c == '\n') {
       command[pointer] = '\0';
-        if(strcmp(command,"CMD+UP") == 0) {
-          Serial.println("tak");
+      Serial.write(command);
+        if(strcmp(command,"CMD+STOP") == 0) {
+          stop();
         }
+        if(strcmp(command,"CMD+UP") == 0) {
+          ride(100,true);
+        }
+        if(strcmp(command,"CMD+DOWN") == 0) {
+          ride(100,false);
+        }
+        if(strcmp(command,"CMD+RIGHT") == 0) {
+          rotate_right(100);
+        }
+
+        if(strcmp(command,"CMD+LEFT") == 0) {
+          rotate_left(100);
+        }
+
+        if(strcmp(command,"CMD+UPRIGHT") == 0) {
+          up_right(100);
+        }
+
+        if(strcmp(command,"CMD+UPLEFT") == 0) {
+          up_left(100);
+        }
+
+        if(strcmp(command,"CMD+DOWNRIGHT") == 0) {
+          down_right(100);
+        }
+
+        if(strcmp(command,"CMD+DOWNLEFT") == 0) {
+          down_left(100);
+        }
+        
         pointer = 0;
     }
     else {
