@@ -43,6 +43,7 @@ void bluetooth_connected() {
     servo.write(90);
     sendDistance = true;
     lcd.backlight();
+    servo.attach(9);
 }
 
 void bluetooth_disconnected() {
@@ -56,4 +57,5 @@ void bluetooth_disconnected() {
     lcd.print("Disconnected");
     if(driving)
       stop();
+    servo.detach();
 }
