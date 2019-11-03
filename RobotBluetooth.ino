@@ -1,10 +1,11 @@
-
-
+int Trig = 7; 
+int Echo = 6;
 #include <Wire.h>
 #include <Adafruit_MotorShield.h>
 #include <Servo.h>
 #include <LiquidCrystal_I2C.h>
 #include <SoftwareSerial.h>
+#include "constants.h"
 
 SoftwareSerial mySerial(10, 11); // RX, TX
 Adafruit_MotorShield AFMS = Adafruit_MotorShield(); 
@@ -21,88 +22,249 @@ char command[20];
 int pointer = 0;
 
 boolean driving = false;
+boolean sendDistance = true;
+short currentMove = 0; 
 
-unsigned long lastZero = 0;
-boolean recordedZero = false;
+boolean receivingCommand = false;
+
+unsigned long lastTime = 0;
+
+int speed = 100;
+
+int distance;
+long return_time;
 
 void setup() {
+  randomSeed(analogRead(0));
   // put your setup code here, to run once:
   Serial.begin(9600);
   pinMode(4,INPUT);
+
+  pinMode(Trig, OUTPUT);
+  pinMode(Echo, INPUT);
+  pinMode(13,OUTPUT);
 
  
   while (!Serial) {
     ; // wait for serial port to connect. Needed for Native USB only
   }
   mySerial.begin(9600);
-  mySerial.println("Hello, world?");
+  delay(100);
 
-  AFMS.begin();  // create with the default frequency 1.6KHz
+  AFMS.begin();  
+  servo.write(90);
   servo.attach(9);
   servo.write(90);
+  
+  lcd.begin(16,2); 
+  lcd.clear();
+  lcd.noBacklight();
+  lcd.setCursor(0,0);
+  lcd.print("RobotBluetoothv1");
 }
 
 void loop() {
-  boolean val = digitalRead(4);
-  Serial.println(val);
-   if(val == 0 && driving) {
-      if(recordedZero==false) {
-        lastZero = millis();
-        recordedZero = true;
-      }
-      else {
-        unsigned long now = millis();
-        if(now - lastZero > 1000) {
-          stop();
-          driving = false;
-          recordedZero = false;
-        }
-      }
-   }
+  measure_distance();
+  unsigned long now = millis();
+
+  if (sendDistance == true) {
+    if(now - lastTime > 2000) {
+      lastTime = now;
+      mySerial.print("MSG,DST");
+      mySerial.print(distance);
+    }
+  }
   if(mySerial.available()) {
     char c = mySerial.read();
-    if(c == '\n') {
-      command[pointer] = '\0';
-      Serial.write(command);
-        if(strcmp(command,"CMD+STOP") == 0) {
+    if(c == '\n' && receivingCommand) {
+     command[pointer] = '\0';
+     lcd.clear();
+     lcd.setCursor(0,0);
+     lcd.print("Received command:");
+     lcd.setCursor(0,1);
+     lcd.print(command);
+
+     Serial.println(command);
+              
+      if(strncmp(command,"MOV,",4) == 0) {
+        if(strcmp(command+4,"STOP") == 0) {
           stop();
         }
-        if(strcmp(command,"CMD+UP") == 0) {
-          ride(100,true);
+        else if(strcmp(command+4,"UP") == 0) {
+          ride(speed,true);
+          currentMove = MOVE_UP;
         }
-        if(strcmp(command,"CMD+DOWN") == 0) {
-          ride(100,false);
+        else if(strcmp(command+4,"DOWN") == 0) {
+          ride(speed,false);
+          currentMove = MOVE_DOWN;            
         }
-        if(strcmp(command,"CMD+RIGHT") == 0) {
-          rotate_right(100);
+        else if(strcmp(command+4,"LEFT") == 0) {
+          rotate_left(speed);
+          currentMove = MOVE_LEFT;            
         }
+        else if(strcmp(command+4,"RIGHT") == 0) {
+          rotate_right(speed);
+          currentMove = MOVE_RIGHT;            
+        }
+        else if(strcmp(command+4,"UPRIGHT") == 0) {
+          up_right(speed);
+          currentMove = MOVE_UPRIGHT;          
+        }
+        else if(strcmp(command+4,"UPLEFT") == 0) {
+          up_left(speed);
+          currentMove = MOVE_UPLEFT; 
+        }
+        else if(strcmp(command+4,"DOWNRIGHT") == 0) {
+          down_right(speed);
+          currentMove = MOVE_DOWNRIGHT;            
+        }
+        else if(strcmp(command+4,"DOWNLEFT") == 0) {
+          down_left(speed);
+          currentMove = MOVE_UPLEFT;
+        }
+      }
+      
+      if(strncmp(command,"SPD,",4) == 0) {
+        int i = strlen(command);
+        int numberLength = i - 4;
+        int destinationSpeed = 0;
+        int j = 0;
+        for(i = strlen(command)-1; i >= strlen(command) - numberLength;i--) {
+          int tmp = command[i] - '0';
+          destinationSpeed = destinationSpeed + (tmp * pow(10,j++));  
+        }
+        speed = destinationSpeed;
+        changeSpeed();
+      }
+      
+      if(strncmp(command,"SND,",4) == 0) {
+        if(strcmp(command+4,"1") == 0) {
+          tone(13, 261, 200); 
+          delay(200);
+          tone(13, 220, 200); 
+          delay(200);
+          tone(13, 246, 300); 
+        }
+        else if(strcmp(command+4,"2") == 0) {
+          tone(13, 2000, 100); 
+        }
+        else if(strcmp(command+4,"3") == 0) {
+          tone(13, 3000, 100); 
+        }
+        else if(strcmp(command+4,"4") == 0) {
+          tone(13, 4000, 100); 
+        }
+      }
 
-        if(strcmp(command,"CMD+LEFT") == 0) {
-          rotate_left(100);
+      if(strncmp(command,"DST,",4) == 0) {
+        int i = strlen(command);
+        int numberLength = i - 4;
+        int destinationDistanceSensorPosition = 0;
+        int j = 0;
+        for(i = strlen(command)-1; i >= strlen(command) - numberLength;i--) {
+          int tmp = command[i] - '0';
+          destinationDistanceSensorPosition = destinationDistanceSensorPosition + (tmp * pow(10,j++));  
         }
-
-        if(strcmp(command,"CMD+UPRIGHT") == 0) {
-          up_right(100);
+        servo.write(destinationDistanceSensorPosition);
+      }
+      if(strncmp(command,"DSB,",4) == 0) {
+        if(strcmp(command+4,"ON") == 0) {
+          lcd.backlight();
         }
-
-        if(strcmp(command,"CMD+UPLEFT") == 0) {
-          up_left(100);
+        else if(strcmp(command+4,"OFF") == 0) {
+          lcd.noBacklight();
         }
-
-        if(strcmp(command,"CMD+DOWNRIGHT") == 0) {
-          down_right(100);
+      }  
+      if(strncmp(command,"DSN,",4) ==0) {
+        if(strcmp(command+4,"TRUE") == 0) {
+          sendDistance = true;
         }
-
-        if(strcmp(command,"CMD+DOWNLEFT") == 0) {
-          down_left(100);
+        else if(strcmp(command+4,"FALSE") == 0) {
+          sendDistance = false;
         }
-        
-        pointer = 0;
+      }
+      pointer = 0;
+      receivingCommand = false;
     }
     else {
-      command[pointer++] = c;
+      if(receivingCommand) {
+        command[pointer++] = c;
+      }
     }
+    
+    if(receivingCommand == false) {
+      if(c == ';'||c == 'O') {
+        receivingCommand = true;
+        if(c == 'O') {
+          command[pointer++] = c;
+        }
+      }
+    }
+
+    if(pointer == 7) {
+      if(strncmp(command,"OK+LOST",7) == 0) {
+        pointer = 0;
+        receivingCommand = false;
+        lcd.begin(16,2); 
+        lcd.clear();
+        lcd.setCursor(0,0);
+        lcd.print("Bluetooth");
+        lcd.setCursor(0,1);
+        lcd.print("Disconnected");
+        if(driving)
+          stop();
+      }
+      if(strncmp(command,"OK+CONN",7) == 0) {
+        pointer = 0;
+        receivingCommand = false;
+        lcd.begin(16,2); 
+        lcd.clear();
+        lcd.setCursor(0,0);
+        lcd.print("Bluetooth");
+        lcd.setCursor(0,1);
+        lcd.print("Connected");
+
+        //DEFAULT STATE
+        speed = 100;
+        servo.write(90);
+        sendDistance = true;
+        lcd.backlight();
+      }
+    }
+    
   }  
+}
+
+
+void changeSpeed(){
+  if(driving){
+    if(currentMove == MOVE_UP) {
+      ride(speed,true);
+    }
+    else if(currentMove == MOVE_DOWN) {
+      ride(speed,false);
+    }
+    else if(currentMove == MOVE_RIGHT) {
+      rotate_right(speed);
+    }
+    else if(currentMove == MOVE_LEFT) {
+      rotate_left(speed);
+    }
+    else if(currentMove == MOVE_UPRIGHT) {
+      up_right(speed);
+    }
+    else if(currentMove == MOVE_DOWNRIGHT) {
+      down_right(speed);
+    }
+    else if(currentMove == MOVE_DOWNLEFT) {
+      down_left(speed);
+    }
+    else if(currentMove == MOVE_UPLEFT) {
+      up_left(speed);
+    }
+    
+  }
+  
 }
 
   
